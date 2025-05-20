@@ -1,65 +1,67 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { revalidatePath } from "next/cache"
+import { checkBlobExists } from "@/lib/blob-storage"
 import { db } from "@/lib/db"
-import { deleteFromBlob } from "@/lib/blob-storage"
 
-// GET /api/gallery/[id] - получить конкретное изображение
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+/**
+ * API-эндпоинт для проверки доступности изображений в галерее
+ * GET /api/gallery/validate - проверяет все изображения
+ * GET /api/gallery/validate?id=123 - проверяет конкретное изображение
+ */
+export async function GET(request: NextRequest) {
   try {
-    const id = params.id
-    const image = await db.gallery.getById(id)
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get("id")
 
-    if (!image) {
-      return NextResponse.json({ error: "Image not found" }, { status: 404 })
+    // Если указан ID, проверяем только одно изображение
+    if (id) {
+      const image = await db.gallery.getById(id)
+      if (!image) {
+        return NextResponse.json({ error: "Image not found" }, { status: 404 })
+      }
+
+      // Для placeholder изображений всегда возвращаем true
+      const isValid = image.url.includes("/placeholder.svg") ? true : await checkBlobExists(image.url)
+
+      return NextResponse.json(
+        {
+          id: image.id,
+          url: image.url,
+          isValid,
+        },
+        { status: 200 },
+      )
     }
 
-    return NextResponse.json({ image }, { status: 200 })
+    // Иначе проверяем все изображения
+    const images = await db.gallery.getAll()
+    const results = await Promise.all(
+      images.map(async (image) => {
+        // Для placeholder изображений всегда возвращаем true
+        const isValid = image.url.includes("/placeholder.svg") ? true : await checkBlobExists(image.url)
+
+        return {
+          id: image.id,
+          url: image.url,
+          isValid,
+        }
+      }),
+    )
+
+    // Статистика
+    const validCount = results.filter((r) => r.isValid).length
+    const invalidCount = results.length - validCount
+
+    return NextResponse.json(
+      {
+        total: results.length,
+        valid: validCount,
+        invalid: invalidCount,
+        results,
+      },
+      { status: 200 },
+    )
   } catch (error) {
-    console.error("Error fetching image:", error)
-    return NextResponse.json({ error: "Failed to fetch image" }, { status: 500 })
-  }
-}
-
-// PATCH /api/gallery/[id] - обновить метаданные изображения
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const id = params.id
-    const data = await request.json()
-
-    const image = await db.gallery.getById(id)
-    if (!image) {
-      return NextResponse.json({ error: "Image not found" }, { status: 404 })
-    }
-
-    const updatedImage = await db.gallery.update(id, data)
-    revalidatePath("/admin/dashboard/gallery")
-    return NextResponse.json({ image: updatedImage }, { status: 200 })
-  } catch (error) {
-    console.error("Error updating image:", error)
-    return NextResponse.json({ error: "Failed to update image" }, { status: 500 })
-  }
-}
-
-// DELETE /api/gallery/[id] - удалить изображение
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const id = params.id
-    const image = await db.gallery.getById(id)
-
-    if (!image) {
-      return NextResponse.json({ error: "Image not found" }, { status: 404 })
-    }
-
-    // Удаляем файл из Vercel Blob Storage
-    if (image.url && !image.url.includes("/placeholder.svg")) {
-      await deleteFromBlob(image.url)
-    }
-
-    await db.gallery.delete(id)
-    revalidatePath("/admin/dashboard/gallery")
-    return NextResponse.json({ success: true }, { status: 200 })
-  } catch (error) {
-    console.error("Error deleting image:", error)
-    return NextResponse.json({ error: "Failed to delete image" }, { status: 500 })
+    console.error("Error validating gallery images:", error)
+    return NextResponse.json({ error: "Failed to validate gallery images" }, { status: 500 })
   }
 }
