@@ -19,7 +19,7 @@ export default function AdminDashboard() {
       <div className="w-64 bg-background border-r p-4 hidden md:block">
         <div className="mb-8">
           <h2 className="text-xl font-bold text-primary">Адмін-панель</h2>
-          <p className="text-sm text-muted-foreground">Маленькі Дослідники</p>
+          <p className="text-sm text-muted-foreground">Калинонька</p>
         </div>
         <nav className="space-y-1">
           <Link

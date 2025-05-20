@@ -1,11 +1,25 @@
 "use client"
 
+import { DialogTrigger } from "@/components/ui/dialog"
+
 import type React from "react"
 
 import { useState, useRef, useEffect } from "react"
 import Link from "next/link"
 import Image from "next/image"
-import { ArrowLeft, Plus, Trash2, Upload, X, Loader2, Pencil, Filter, FolderPlus, RefreshCw } from "lucide-react"
+import {
+  ArrowLeft,
+  Plus,
+  Trash2,
+  Upload,
+  X,
+  Loader2,
+  Pencil,
+  Filter,
+  FolderPlus,
+  RefreshCw,
+  Search,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -16,7 +30,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import { Progress } from "@/components/ui/progress"
 import { toast } from "@/components/ui/use-toast"
@@ -27,11 +40,49 @@ import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatFileSize } from "@/lib/image-optimizer"
 import type { GalleryImage, Category } from "@/types/gallery"
+// Добавьте импорт компонента ValidateGallery
+import { ValidateGallery } from "./validate"
+
+// Создаем заглушку для категорий, если API не работает
+const fallbackCategories: Category[] = [
+  {
+    id: "uncategorized",
+    name: "Без категорії",
+    description: "Зображення без категорії",
+    createdAt: new Date().toISOString(),
+  },
+]
+
+// Создаем заглушку для изображений, если API не работает
+const fallbackImages: GalleryImage[] = [
+  {
+    id: "fallback-1",
+    name: "Приклад зображення 1",
+    description: "Це приклад зображення для демонстрації",
+    category: "uncategorized",
+    url: "/placeholder.svg?height=300&width=300&text=Приклад+1",
+    size: 1024000,
+    type: "image/jpeg",
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "fallback-2",
+    name: "Приклад зображення 2",
+    description: "Це приклад зображення для демонстрації",
+    category: "uncategorized",
+    url: "/placeholder.svg?height=300&width=300&text=Приклад+2",
+    size: 1536000,
+    type: "image/jpeg",
+    createdAt: new Date().toISOString(),
+  },
+]
 
 export default function GalleryAdmin() {
   const [images, setImages] = useState<GalleryImage[]>([])
+  const [filteredImages, setFilteredImages] = useState<GalleryImage[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [selectedCategory, setSelectedCategory] = useState<string>("all")
+  const [searchQuery, setSearchQuery] = useState<string>("")
   const [isLoading, setIsLoading] = useState(true)
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [previews, setPreviews] = useState<string[]>([])
@@ -42,6 +93,9 @@ export default function GalleryAdmin() {
   const [editingImage, setEditingImage] = useState<GalleryImage | null>(null)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [apiError, setApiError] = useState<boolean>(false)
+  const [imagesApiError, setImagesApiError] = useState<boolean>(false)
 
   // Завантаження даних при першому рендері
   useEffect(() => {
@@ -50,33 +104,134 @@ export default function GalleryAdmin() {
 
   // Завантаження даних при зміні категорії
   useEffect(() => {
-    fetchGalleryData()
-  }, [selectedCategory])
+    if (!apiError) {
+      fetchGalleryData()
+    }
+  }, [selectedCategory, apiError])
+
+  // Фільтрація зображень при зміні пошукового запиту
+  useEffect(() => {
+    filterImages()
+  }, [searchQuery, images])
 
   const fetchGalleryData = async () => {
     setIsLoading(true)
+    setError(null)
+
     try {
       // Завантаження категорій
-      const categoriesResponse = await fetch("/api/gallery/categories")
-      const categoriesData = await categoriesResponse.json()
-      setCategories(categoriesData.categories)
+      console.log("Fetching categories...")
+      let categoriesData
+
+      try {
+        const categoriesResponse = await fetch("/api/gallery/categories", {
+          cache: "no-store",
+          headers: {
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            Pragma: "no-cache",
+            Expires: "0",
+          },
+        })
+
+        if (!categoriesResponse.ok) {
+          console.error("Categories API returned error:", categoriesResponse.status, categoriesResponse.statusText)
+          throw new Error(`API returned ${categoriesResponse.status}: ${categoriesResponse.statusText}`)
+        }
+
+        categoriesData = await categoriesResponse.json()
+        console.log("Categories data:", categoriesData)
+
+        if (!categoriesData || !categoriesData.categories) {
+          console.error("Invalid categories data format:", categoriesData)
+          throw new Error("Invalid categories data format")
+        }
+
+        setCategories(categoriesData.categories)
+        setApiError(false)
+      } catch (categoryError) {
+        console.error("Error fetching categories:", categoryError)
+        // Используем заглушку для категорий
+        setCategories(fallbackCategories)
+        setApiError(true)
+        // Не выбрасываем ошибку дальше, чтобы продолжить загрузку изображений
+      }
 
       // Завантаження зображень
-      const imagesResponse = await fetch(
-        `/api/gallery${selectedCategory !== "all" ? `?category=${selectedCategory}` : ""}`,
-      )
-      const imagesData = await imagesResponse.json()
-      setImages(imagesData.images)
+      console.log("Fetching images...")
+      try {
+        const imagesResponse = await fetch(
+          `/api/gallery${selectedCategory !== "all" ? `?category=${selectedCategory}` : ""}`,
+          {
+            cache: "no-store",
+            headers: {
+              "Cache-Control": "no-cache, no-store, must-revalidate",
+              Pragma: "no-cache",
+              Expires: "0",
+            },
+          },
+        )
+
+        if (!imagesResponse.ok) {
+          console.error("Images API returned error:", imagesResponse.status, imagesResponse.statusText)
+          throw new Error(`API returned ${imagesResponse.status}: ${imagesResponse.statusText}`)
+        }
+
+        const imagesData = await imagesResponse.json()
+        console.log("Images data:", imagesData)
+
+        if (!imagesData || !imagesData.images) {
+          console.error("Invalid images data format:", imagesData)
+          throw new Error("Invalid images data format")
+        }
+
+        setImages(imagesData.images)
+        setFilteredImages(imagesData.images)
+        setImagesApiError(false)
+      } catch (imagesError) {
+        console.error("Error fetching images:", imagesError)
+        // Используем заглушку для изображений
+        setImages(fallbackImages)
+        setFilteredImages(fallbackImages)
+        setImagesApiError(true)
+        toast({
+          title: "Помилка завантаження зображень",
+          description: "Використовуються демонстраційні зображення",
+          variant: "destructive",
+        })
+      }
     } catch (error) {
-      console.error("Error fetching gallery data:", error)
+      console.error("General error in fetchGalleryData:", error)
+      setError(error instanceof Error ? error.message : "Не вдалося завантажити дані галереї")
       toast({
         title: "Помилка завантаження",
-        description: "Не вдалося завантажити дані галереї",
+        description: error instanceof Error ? error.message : "Не вдалося завантажити дані галереї",
         variant: "destructive",
       })
+      // Инициализируем заглушками в случае ошибки
+      setImages(fallbackImages)
+      setFilteredImages(fallbackImages)
+      setCategories(fallbackCategories)
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const filterImages = () => {
+    if (!images || images.length === 0) {
+      setFilteredImages([])
+      return
+    }
+
+    if (!searchQuery.trim()) {
+      setFilteredImages(images)
+      return
+    }
+
+    const query = searchQuery.toLowerCase()
+    const filtered = images.filter(
+      (image) => image.name.toLowerCase().includes(query) || image.description.toLowerCase().includes(query),
+    )
+    setFilteredImages(filtered)
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -96,12 +251,22 @@ export default function GalleryAdmin() {
   }
 
   const handleDeleteImage = async (id: string) => {
+    // Проверяем, является ли изображение заглушкой
+    if (id.startsWith("fallback-")) {
+      toast({
+        title: "Демонстраційний режим",
+        description: "Видалення демонстраційних зображень недоступне",
+        variant: "destructive",
+      })
+      return
+    }
+
     if (confirm("Ви впевнені, що хочете видалити це зображення?")) {
       try {
         const response = await fetch(`/api/gallery/${id}`, { method: "DELETE" })
 
         if (response.ok) {
-          setImages(images.filter((img) => img.id !== id))
+          setImages((prevImages) => prevImages.filter((img) => img.id !== id))
           toast({
             title: "Зображення видалено",
             description: "Зображення було успішно видалено з галереї",
@@ -131,18 +296,29 @@ export default function GalleryAdmin() {
       return
     }
 
+    // Проверяем, находимся ли мы в демонстрационном режиме
+    if (imagesApiError) {
+      toast({
+        title: "Демонстраційний режим",
+        description: "Завантаження зображень недоступне в демонстраційному режимі",
+        variant: "destructive",
+      })
+      return
+    }
+
     setIsUploading(true)
     setUploadProgress(0)
 
     try {
-      // Створення FormData для відправки файлів
+      // Создание FormData для отправки файлов
       const formData = new FormData()
       selectedFiles.forEach((file) => {
         formData.append("files", file)
       })
       formData.append("category", selectedCategory === "all" ? "uncategorized" : selectedCategory)
+      formData.append("description", "") // Можно добавить поле для описания
 
-      // Симуляція прогресу завантаження
+      // Симуляция прогресса загрузки
       const progressInterval = setInterval(() => {
         setUploadProgress((prev) => {
           if (prev >= 90) {
@@ -153,7 +329,7 @@ export default function GalleryAdmin() {
         })
       }, 200)
 
-      // Відправка на сервер
+      // Отправка на сервер
       const response = await fetch("/api/gallery", {
         method: "POST",
         body: formData,
@@ -165,10 +341,10 @@ export default function GalleryAdmin() {
       if (response.ok) {
         const data = await response.json()
 
-        // Додавання нових зображень до галереї
-        setImages((prev) => [...prev, ...data.images])
+        // Добавление новых изображений к галерее
+        setImages((prev) => [...prev, ...(data.images || [])])
 
-        // Очищення після завантаження
+        // Очистка после загрузки
         setTimeout(() => {
           setIsUploading(false)
           setSelectedFiles([])
@@ -177,7 +353,7 @@ export default function GalleryAdmin() {
 
           toast({
             title: "Завантаження завершено",
-            description: `Успішно завантажено ${data.images.length} зображень`,
+            description: `Успішно завантажено ${data.images ? data.images.length : 0} зображень у Vercel Blob Storage`,
           })
         }, 500)
       } else {
@@ -205,6 +381,16 @@ export default function GalleryAdmin() {
       return
     }
 
+    // Проверяем, находимся ли мы в демонстрационном режиме
+    if (apiError) {
+      toast({
+        title: "Демонстраційний режим",
+        description: "Додавання категорій недоступне в демонстраційному режимі",
+        variant: "destructive",
+      })
+      return
+    }
+
     try {
       const response = await fetch("/api/gallery/categories", {
         method: "POST",
@@ -216,7 +402,7 @@ export default function GalleryAdmin() {
 
       if (response.ok) {
         const data = await response.json()
-        setCategories([...categories, data.category])
+        setCategories((prevCategories) => [...prevCategories, data.category])
         setNewCategory({ name: "", description: "" })
         setIsAddCategoryOpen(false)
         toast({
@@ -240,6 +426,17 @@ export default function GalleryAdmin() {
   const handleUpdateImage = async () => {
     if (!editingImage) return
 
+    // Проверяем, является ли изображение заглушкой
+    if (editingImage.id.startsWith("fallback-")) {
+      toast({
+        title: "Демонстраційний режим",
+        description: "Редагування демонстраційних зображень недоступне",
+        variant: "destructive",
+      })
+      setIsEditDialogOpen(false)
+      return
+    }
+
     try {
       const response = await fetch(`/api/gallery/${editingImage.id}`, {
         method: "PATCH",
@@ -255,7 +452,7 @@ export default function GalleryAdmin() {
 
       if (response.ok) {
         const data = await response.json()
-        setImages(images.map((img) => (img.id === editingImage.id ? data.image : img)))
+        setImages((prevImages) => prevImages.map((img) => (img.id === editingImage.id ? data.image : img)))
         setIsEditDialogOpen(false)
         toast({
           title: "Зображення оновлено",
@@ -327,11 +524,13 @@ export default function GalleryAdmin() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="uncategorized">Без категорії</SelectItem>
-                      {categories.map((category) => (
-                        <SelectItem key={category.id} value={category.id}>
-                          {category.name}
-                        </SelectItem>
-                      ))}
+                      {categories &&
+                        categories.length > 0 &&
+                        categories.map((category) => (
+                          <SelectItem key={category.id} value={category.id}>
+                            {category.name}
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -347,6 +546,9 @@ export default function GalleryAdmin() {
                             alt={`Попередній перегляд ${index}`}
                             fill
                             className="object-cover"
+                            onError={(e) => {
+                              e.currentTarget.src = "/placeholder.svg?text=Помилка+завантаження"
+                            }}
                           />
                           <button
                             className="absolute top-1 right-1 bg-black/60 rounded-full p-1 text-white"
@@ -448,31 +650,54 @@ export default function GalleryAdmin() {
         </div>
       </div>
 
+      {(apiError || imagesApiError) && (
+        <div className="mb-6 p-4 border border-yellow-200 bg-yellow-50 rounded-md">
+          <p className="text-yellow-800 font-medium">
+            Увага: Виникли проблеми з завантаженням {apiError && "категорій"}
+            {apiError && imagesApiError ? " та " : ""}
+            {imagesApiError && "зображень"}.
+          </p>
+          <p className="text-yellow-700">Використовуються демонстраційні дані. Деякі функції можуть бути недоступні.</p>
+          <Button variant="outline" className="mt-2" onClick={fetchGalleryData}>
+            Спробувати знову
+          </Button>
+        </div>
+      )}
+
+      {/* Новий блок пошуку */}
       <div className="mb-6">
         <Card>
-          <CardHeader className="pb-3">
-            <CardTitle>Фільтр за категоріями</CardTitle>
-            <CardDescription>Виберіть категорію для фільтрації зображень</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant={selectedCategory === "all" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSelectedCategory("all")}
-              >
-                Усі
-              </Button>
-              {categories.map((category) => (
-                <Button
-                  key={category.id}
-                  variant={selectedCategory === category.id ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setSelectedCategory(category.id)}
-                >
-                  {category.name}
-                </Button>
-              ))}
+          <CardContent className="p-4">
+            <div className="flex flex-col md:flex-row gap-4">
+              <div className="flex-1">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="search"
+                    placeholder="Пошук за назвою або описом..."
+                    className="pl-8"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div>
+                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Виберіть категорію" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Усі категорії</SelectItem>
+                    {categories &&
+                      categories.length > 0 &&
+                      categories.map((category) => (
+                        <SelectItem key={category.id} value={category.id}>
+                          {category.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -480,7 +705,14 @@ export default function GalleryAdmin() {
 
       <Tabs defaultValue="grid" className="mb-6">
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold">Зображення галереї</h2>
+          <h2 className="text-xl font-bold">
+            Зображення галереї
+            {searchQuery && (
+              <span className="text-sm font-normal ml-2 text-muted-foreground">
+                Результати пошуку: {filteredImages ? filteredImages.length : 0}
+              </span>
+            )}
+          </h2>
           <TabsList>
             <TabsTrigger value="grid">Сітка</TabsTrigger>
             <TabsTrigger value="list">Список</TabsTrigger>
@@ -492,15 +724,34 @@ export default function GalleryAdmin() {
             <div className="flex justify-center items-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
-          ) : images.length === 0 ? (
+          ) : error ? (
+            <div className="text-center py-12 text-destructive">
+              <p>{error}</p>
+              <Button variant="outline" className="mt-4" onClick={fetchGalleryData}>
+                Спробувати знову
+              </Button>
+            </div>
+          ) : !filteredImages || filteredImages.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
-              <p>Немає зображень у цій категорії</p>
+              {searchQuery ? (
+                <p>Немає зображень, що відповідають пошуковому запиту "{searchQuery}"</p>
+              ) : (
+                <p>Немає зображень у цій категорії</p>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {images.map((image) => (
+              {filteredImages.map((image) => (
                 <div key={image.id} className="group relative aspect-square overflow-hidden rounded-lg">
-                  <Image src={image.url || "/placeholder.svg"} alt={image.name} fill className="object-cover" />
+                  <Image
+                    src={image.url || "/placeholder.svg"}
+                    alt={image.name}
+                    fill
+                    className="object-cover"
+                    onError={(e) => {
+                      e.currentTarget.src = "/placeholder.svg?text=Помилка+завантаження"
+                    }}
+                  />
                   <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2">
                     <p className="text-white text-center px-2 font-medium">{image.name}</p>
                     <div className="flex gap-2">
@@ -530,6 +781,9 @@ export default function GalleryAdmin() {
                                   alt={editingImage.name}
                                   fill
                                   className="object-cover"
+                                  onError={(e) => {
+                                    e.currentTarget.src = "/placeholder.svg?text=Помилка+завантаження"
+                                  }}
                                 />
                               </div>
                               <div className="space-y-2">
@@ -560,11 +814,13 @@ export default function GalleryAdmin() {
                                   </SelectTrigger>
                                   <SelectContent>
                                     <SelectItem value="uncategorized">Без категорії</SelectItem>
-                                    {categories.map((category) => (
-                                      <SelectItem key={category.id} value={category.id}>
-                                        {category.name}
-                                      </SelectItem>
-                                    ))}
+                                    {categories &&
+                                      categories.length > 0 &&
+                                      categories.map((category) => (
+                                        <SelectItem key={category.id} value={category.id}>
+                                          {category.name}
+                                        </SelectItem>
+                                      ))}
                                   </SelectContent>
                                 </Select>
                               </div>
@@ -615,9 +871,20 @@ export default function GalleryAdmin() {
             <div className="flex justify-center items-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
-          ) : images.length === 0 ? (
+          ) : error ? (
+            <div className="text-center py-12 text-destructive">
+              <p>{error}</p>
+              <Button variant="outline" className="mt-4" onClick={fetchGalleryData}>
+                Спробувати знову
+              </Button>
+            </div>
+          ) : !filteredImages || filteredImages.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
-              <p>Немає зображень у цій категорії</p>
+              {searchQuery ? (
+                <p>Немає зображень, що відповідають пошуковому запиту "{searchQuery}"</p>
+              ) : (
+                <p>Немає зображень у цій категорії</p>
+              )}
             </div>
           ) : (
             <div className="border rounded-md">
@@ -629,11 +896,19 @@ export default function GalleryAdmin() {
                 <div className="col-span-1">Розмір</div>
                 <div className="col-span-2">Дії</div>
               </div>
-              {images.map((image) => (
+              {filteredImages.map((image) => (
                 <div key={image.id} className="grid grid-cols-12 gap-4 p-4 border-b items-center">
                   <div className="col-span-1">
                     <div className="relative w-12 h-12 rounded overflow-hidden">
-                      <Image src={image.url || "/placeholder.svg"} alt={image.name} fill className="object-cover" />
+                      <Image
+                        src={image.url || "/placeholder.svg"}
+                        alt={image.name}
+                        fill
+                        className="object-cover"
+                        onError={(e) => {
+                          e.currentTarget.src = "/placeholder.svg?text=Помилка+завантаження"
+                        }}
+                      />
                     </div>
                   </div>
                   <div className="col-span-3 truncate" title={image.name}>
@@ -643,7 +918,9 @@ export default function GalleryAdmin() {
                     {image.description || "—"}
                   </div>
                   <div className="col-span-2">
-                    {categories.find((c) => c.id === image.category)?.name || "Без категорії"}
+                    {categories && categories.length > 0
+                      ? categories.find((c) => c.id === image.category)?.name || "Без категорії"
+                      : "Без категорії"}
                   </div>
                   <div className="col-span-1">{formatFileSize(image.size)}</div>
                   <div className="col-span-2 flex gap-2">
@@ -673,6 +950,9 @@ export default function GalleryAdmin() {
                                 alt={editingImage.name}
                                 fill
                                 className="object-cover"
+                                onError={(e) => {
+                                  e.currentTarget.src = "/placeholder.svg?text=Помилка+завантаження"
+                                }}
                               />
                             </div>
                             <div className="space-y-2">
@@ -703,11 +983,13 @@ export default function GalleryAdmin() {
                                 </SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="uncategorized">Без категорії</SelectItem>
-                                  {categories.map((category) => (
-                                    <SelectItem key={category.id} value={category.id}>
-                                      {category.name}
-                                    </SelectItem>
-                                  ))}
+                                  {categories &&
+                                    categories.length > 0 &&
+                                    categories.map((category) => (
+                                      <SelectItem key={category.id} value={category.id}>
+                                        {category.name}
+                                      </SelectItem>
+                                    ))}
                                 </SelectContent>
                               </Select>
                             </div>
@@ -761,7 +1043,7 @@ export default function GalleryAdmin() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {categories.length === 0 ? (
+              {!categories || categories.length === 0 ? (
                 <div className="text-center py-4 text-muted-foreground">
                   <p>Немає категорій</p>
                 </div>
@@ -801,6 +1083,11 @@ export default function GalleryAdmin() {
             </Button>
           </CardFooter>
         </Card>
+      </div>
+
+      {/* Добавьте этот блок */}
+      <div className="mt-8">
+        <ValidateGallery />
       </div>
     </div>
   )

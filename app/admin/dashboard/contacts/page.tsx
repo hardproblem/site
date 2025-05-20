@@ -14,7 +14,7 @@ export default function ContactsAdmin() {
   const [contactData, setContactData] = useState({
     address: "вул. Навчальна 123, Київ, 01001",
     phone: "(044) 123-4567",
-    email: "info@malenkidoslidnyky.ua",
+    email: "info@kalynon.ua",
     hours: "Понеділок - П'ятниця: 7:30 - 17:30",
   })
 

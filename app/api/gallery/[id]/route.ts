@@ -1,8 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
+import { deleteFromBlob } from "@/lib/blob-storage"
 
-// GET /api/gallery/[id] - отримати конкретне зображення
+// GET /api/gallery/[id] - получить конкретное изображение
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const id = params.id
@@ -19,7 +20,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-// PATCH /api/gallery/[id] - оновити метадані зображення
+// PATCH /api/gallery/[id] - обновить метаданные изображения
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const id = params.id
@@ -39,7 +40,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   }
 }
 
-// DELETE /api/gallery/[id] - видалити зображення
+// DELETE /api/gallery/[id] - удалить изображение
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const id = params.id
@@ -49,8 +50,10 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
       return NextResponse.json({ error: "Image not found" }, { status: 404 })
     }
 
-    // В реальному додатку тут був би код для видалення файлу з хмарного сховища
-    // await deleteFromStorage(image.url)
+    // Удаляем файл из Vercel Blob Storage
+    if (image.url && !image.url.includes("/placeholder.svg")) {
+      await deleteFromBlob(image.url)
+    }
 
     await db.gallery.delete(id)
     revalidatePath("/admin/dashboard/gallery")
