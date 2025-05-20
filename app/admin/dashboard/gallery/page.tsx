@@ -53,30 +53,6 @@ const fallbackCategories: Category[] = [
   },
 ]
 
-// Создаем заглушку для изображений, если API не работает
-const fallbackImages: GalleryImage[] = [
-  {
-    id: "fallback-1",
-    name: "Приклад зображення 1",
-    description: "Це приклад зображення для демонстрації",
-    category: "uncategorized",
-    url: "/placeholder.svg?height=300&width=300&text=Приклад+1",
-    size: 1024000,
-    type: "image/jpeg",
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: "fallback-2",
-    name: "Приклад зображення 2",
-    description: "Це приклад зображення для демонстрації",
-    category: "uncategorized",
-    url: "/placeholder.svg?height=300&width=300&text=Приклад+2",
-    size: 1536000,
-    type: "image/jpeg",
-    createdAt: new Date().toISOString(),
-  },
-]
-
 export default function GalleryAdmin() {
   const [images, setImages] = useState<GalleryImage[]>([])
   const [filteredImages, setFilteredImages] = useState<GalleryImage[]>([])
@@ -95,7 +71,6 @@ export default function GalleryAdmin() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [apiError, setApiError] = useState<boolean>(false)
-  const [imagesApiError, setImagesApiError] = useState<boolean>(false)
 
   // Завантаження даних при першому рендері
   useEffect(() => {
@@ -186,18 +161,20 @@ export default function GalleryAdmin() {
 
         setImages(imagesData.images)
         setFilteredImages(imagesData.images)
-        setImagesApiError(false)
       } catch (imagesError) {
         console.error("Error fetching images:", imagesError)
-        // Используем заглушку для изображений
-        setImages(fallbackImages)
-        setFilteredImages(fallbackImages)
-        setImagesApiError(true)
-        toast({
-          title: "Помилка завантаження зображень",
-          description: "Використовуються демонстраційні зображення",
-          variant: "destructive",
-        })
+        // Устанавливаем пустые массивы для изображений
+        setImages([])
+        setFilteredImages([])
+        // Показываем ошибку только если не удалось загрузить изображения
+        if (!apiError) {
+          setError("Не вдалося завантажити зображення")
+          toast({
+            title: "Помилка завантаження",
+            description: "Не вдалося завантажити зображення",
+            variant: "destructive",
+          })
+        }
       }
     } catch (error) {
       console.error("General error in fetchGalleryData:", error)
@@ -207,10 +184,9 @@ export default function GalleryAdmin() {
         description: error instanceof Error ? error.message : "Не вдалося завантажити дані галереї",
         variant: "destructive",
       })
-      // Инициализируем заглушками в случае ошибки
-      setImages(fallbackImages)
-      setFilteredImages(fallbackImages)
-      setCategories(fallbackCategories)
+      // Инициализируем пустыми массивами в случае ошибки
+      setImages([])
+      setFilteredImages([])
     } finally {
       setIsLoading(false)
     }
@@ -251,16 +227,6 @@ export default function GalleryAdmin() {
   }
 
   const handleDeleteImage = async (id: string) => {
-    // Проверяем, является ли изображение заглушкой
-    if (id.startsWith("fallback-")) {
-      toast({
-        title: "Демонстраційний режим",
-        description: "Видалення демонстраційних зображень недоступне",
-        variant: "destructive",
-      })
-      return
-    }
-
     if (confirm("Ви впевнені, що хочете видалити це зображення?")) {
       try {
         const response = await fetch(`/api/gallery/${id}`, { method: "DELETE" })
@@ -291,16 +257,6 @@ export default function GalleryAdmin() {
       toast({
         title: "Помилка",
         description: "Будь ласка, виберіть файли для завантаження",
-        variant: "destructive",
-      })
-      return
-    }
-
-    // Проверяем, находимся ли мы в демонстрационном режиме
-    if (imagesApiError) {
-      toast({
-        title: "Демонстраційний режим",
-        description: "Завантаження зображень недоступне в демонстраційному режимі",
         variant: "destructive",
       })
       return
@@ -381,16 +337,6 @@ export default function GalleryAdmin() {
       return
     }
 
-    // Проверяем, находимся ли мы в демонстрационном режиме
-    if (apiError) {
-      toast({
-        title: "Демонстраційний режим",
-        description: "Додавання категорій недоступне в демонстраційному режимі",
-        variant: "destructive",
-      })
-      return
-    }
-
     try {
       const response = await fetch("/api/gallery/categories", {
         method: "POST",
@@ -425,17 +371,6 @@ export default function GalleryAdmin() {
 
   const handleUpdateImage = async () => {
     if (!editingImage) return
-
-    // Проверяем, является ли изображение заглушкой
-    if (editingImage.id.startsWith("fallback-")) {
-      toast({
-        title: "Демонстраційний режим",
-        description: "Редагування демонстраційних зображень недоступне",
-        variant: "destructive",
-      })
-      setIsEditDialogOpen(false)
-      return
-    }
 
     try {
       const response = await fetch(`/api/gallery/${editingImage.id}`, {
@@ -650,14 +585,10 @@ export default function GalleryAdmin() {
         </div>
       </div>
 
-      {(apiError || imagesApiError) && (
+      {apiError && (
         <div className="mb-6 p-4 border border-yellow-200 bg-yellow-50 rounded-md">
-          <p className="text-yellow-800 font-medium">
-            Увага: Виникли проблеми з завантаженням {apiError && "категорій"}
-            {apiError && imagesApiError ? " та " : ""}
-            {imagesApiError && "зображень"}.
-          </p>
-          <p className="text-yellow-700">Використовуються демонстраційні дані. Деякі функції можуть бути недоступні.</p>
+          <p className="text-yellow-800 font-medium">Увага: Виникли проблеми з завантаженням категорій.</p>
+          <p className="text-yellow-700">Використовуються базові категорії. Деякі функції можуть бути недоступні.</p>
           <Button variant="outline" className="mt-2" onClick={fetchGalleryData}>
             Спробувати знову
           </Button>

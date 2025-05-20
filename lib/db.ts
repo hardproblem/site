@@ -1,3 +1,4 @@
+// Проверим, что файл существует и содержит правильные методы
 import type { Category, GalleryImage } from "@/types/gallery"
 
 // Временное хранилище данных в памяти
@@ -10,10 +11,10 @@ const inMemoryDb = {
       createdAt: new Date().toISOString(),
     },
   ] as Category[],
-  images: [] as GalleryImage[], // 🟡 вот массив изображений
+  images: [] as GalleryImage[],
 }
 
-// ✅ Добавьте этот блок внутрь export const db:
+// Экспортируем объект базы данных с методами для работы с категориями и изображениями
 export const db = {
   categories: {
     getAll: async () => {
@@ -28,43 +29,54 @@ export const db = {
       return category
     },
     update: async (id: string, data: Partial<Category>) => {
-      const index = inMemoryDb.categories.findIndex((c) => c.id === id)
-      if (index !== -1) {
-        inMemoryDb.categories[index] = { ...inMemoryDb.categories[index], ...data }
-      }
+      const index = inMemoryDb.categories.findIndex((category) => category.id === id)
+      if (index === -1) return null
+      inMemoryDb.categories[index] = { ...inMemoryDb.categories[index], ...data }
+      return inMemoryDb.categories[index]
     },
     delete: async (id: string) => {
-      const index = inMemoryDb.categories.findIndex((c) => c.id === id)
-      if (index !== -1) {
-        inMemoryDb.categories.splice(index, 1)
-      }
+      const index = inMemoryDb.categories.findIndex((category) => category.id === id)
+      if (index === -1) return false
+      inMemoryDb.categories.splice(index, 1)
+      return true
     },
   },
-
-  // 🔧 ДОБАВЬТЕ ЭТО:
-  gallery: {
-    getAll: async () => {
-      console.log("Getting all gallery images from in-memory DB")
+  images: {
+    getAll: async (category?: string) => {
+      if (category && category !== "all") {
+        return inMemoryDb.images.filter((image) => image.category === category)
+      }
       return inMemoryDb.images
     },
     getById: async (id: string) => {
-      return inMemoryDb.images.find((img) => img.id === id)
+      return inMemoryDb.images.find((image) => image.id === id)
     },
     create: async (image: GalleryImage) => {
       inMemoryDb.images.push(image)
       return image
     },
+    createMany: async (images: GalleryImage[]) => {
+      inMemoryDb.images.push(...images)
+      return images
+    },
     update: async (id: string, data: Partial<GalleryImage>) => {
-      const index = inMemoryDb.images.findIndex((img) => img.id === id)
-      if (index !== -1) {
-        inMemoryDb.images[index] = { ...inMemoryDb.images[index], ...data }
-      }
+      const index = inMemoryDb.images.findIndex((image) => image.id === id)
+      if (index === -1) return null
+      inMemoryDb.images[index] = { ...inMemoryDb.images[index], ...data }
+      return inMemoryDb.images[index]
     },
     delete: async (id: string) => {
-      const index = inMemoryDb.images.findIndex((img) => img.id === id)
-      if (index !== -1) {
-        inMemoryDb.images.splice(index, 1)
-      }
+      const index = inMemoryDb.images.findIndex((image) => image.id === id)
+      if (index === -1) return false
+      inMemoryDb.images.splice(index, 1)
+      return true
+    },
+    search: async (query: string) => {
+      const lowerQuery = query.toLowerCase()
+      return inMemoryDb.images.filter(
+        (image) =>
+          image.name.toLowerCase().includes(lowerQuery) || image.description.toLowerCase().includes(lowerQuery),
+      )
     },
   },
 }
