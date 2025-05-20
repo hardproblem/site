@@ -246,7 +246,6 @@ export default function EditSections() {
           setHeroData(updatedHeroData)
 
           // Сохраняем обновленные данные в localStorage
-          handleSaveFrom(updatedHeroData);
           const currentData = getSectionsData()
           setSectionsData({
             ...currentData,
@@ -282,34 +281,6 @@ export default function EditSections() {
       })
     }
   }
-
-  
-  function handleSaveFrom(hero) {
-    const updatedData = {
-      hero,
-      about: aboutData,
-      cta: ctaData,
-    };
-
-    setSectionsData(updatedData);
-
-    fetch("/api/sections", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(updatedData),
-    }).then(res => {
-      if (!res.ok) {
-        toast({
-          title: "Помилка",
-          description: "Не вдалося зберегти зміни на сервері",
-          variant: "destructive",
-        })
-      }
-    });
-  }
-
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
